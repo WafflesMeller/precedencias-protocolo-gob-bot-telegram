@@ -1,0 +1,10 @@
+{
+  "name": "precedencias-protocolo-gob-bot-telegram",
+  "version": "1.0.0",
+  "main": "api/bot.js",
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "pdfkit": "^0.15.0",
+    "xlsx": "^0.18.5"
+  }
+}
