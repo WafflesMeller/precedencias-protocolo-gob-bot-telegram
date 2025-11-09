@@ -177,7 +177,7 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
                 const th = nh + spacing + ph; // Altura total del bloque de texto
                 
                 // Altura que ocupa el logo + márgenes (10 sup, 10 inf)
-                const logoH = logoActualHeight > 0 ? (10 + logoActualHeight + 10) : 0; 
+                const logoH = logoActualHeight > 0 ? (10 + logoActualHeight + 0) : 0; 
                 
                 // Espacio restante para el texto
                 const remainingH = CARD.height - logoH;
