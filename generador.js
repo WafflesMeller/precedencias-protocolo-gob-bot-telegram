@@ -124,7 +124,7 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
                 let logoActualHeight = 0; // Inicializamos a 0
                 try {
                     const img = doc.openImage(logoPath);
-                    const iw = 60; 
+                    const iw = 80; 
                     logoActualHeight = img.height / img.width * iw;
                     const logoX = x + (CARD.width - iw) / 2;
                     // Posicionamiento Y: 10 puntos desde el borde superior de la tarjeta (y)
