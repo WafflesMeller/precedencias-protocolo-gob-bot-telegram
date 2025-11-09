@@ -16,31 +16,64 @@ const CARD = {
 
 // Esta es la nueva función "envoltura" que el bot llamará
 async function generatePdfFromFiles(inputFile, logoFile, outputPdf) {
-  // Leer Excel y parsear
-  const workbook = xlsx.readFile(inputFile);
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = xlsx.utils.sheet_to_json(sheet, { defval: '' });
-  if (!rows.length) {
-    throw new Error('El archivo Excel está vacío.');
+  // Leer Excel y parsear, asumiendo inicialmente que tiene encabezados (comportamiento actual)
+  let rowsWithHeaders = xlsx.utils.sheet_to_json(sheet, { defval: '' });
+
+  if (!rowsWithHeaders.length) {
+      throw new Error('El archivo Excel está vacío o no contiene datos válidos.');
   }
 
-  // Detectar columnas dinámicamente
-  const headers = Object.keys(rows[0]);
-  let nombreKey = headers.find(h => /nombre/i.test(h));
-  let cargoKey = headers.find(h => /cargo/i.test(h));
-  if (!nombreKey || !cargoKey) {
-    if (headers.length === 2) [nombreKey, cargoKey] = headers;
-    else { throw new Error('Encabezados inválidos.'); }
+  let dataToProcess = [];
+  let nombreKey, cargoKey;
+
+  // 1. INTENTO DE DETECCIÓN CON ENCABEZADOS (Lógica original)
+  const headers = Object.keys(rowsWithHeaders[0]);
+  nombreKey = headers.find(h => /nombre/i.test(h));
+  cargoKey = headers.find(h => /cargo/i.test(h));
+
+  // Si se encuentran las claves por nombre o se asume un orden (al menos 2 columnas)
+  if (nombreKey && cargoKey) {
+      dataToProcess = rowsWithHeaders;
+  } else if (headers.length >= 2) {
+      // Si no encontramos 'nombre'/'cargo', asumimos que las primeras dos columnas son
+      // Nombre y Cargo respectivamente, usando sus nombres de encabezado.
+      [nombreKey, cargoKey] = headers;
+      dataToProcess = rowsWithHeaders;
+  } else {
+      // 2. ESCENARIO SIN ENCABEZADOS
+      // Leemos la hoja completa, asumiendo que la fila 1 (índice 0) son datos.
+      const rawData = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      if (rawData.length === 0 || rawData[0].length < 2) {
+          throw new Error('El archivo Excel no tiene datos o columnas suficientes (se necesitan al menos 2).');
+      }
+
+      // Mapeamos los datos, asumiendo Columna A (índice 0) es Nombre y Columna B (índice 1) es Cargo
+      dataToProcess = rawData.map(row => ({
+          name: row[0],
+          position: row[1] || ''
+      }));
+
+      // Definimos las claves para el siguiente paso
+      nombreKey = 'name';
+      cargoKey = 'position';
   }
 
-  // Normalizar datos
-  const data = rows.map(r => ({
-    name: String(r[nombreKey]).toUpperCase(),
-    position: String(r[cargoKey]).toUpperCase()
+  // 3. Normalizar datos
+  // Filtramos filas que pueden haber quedado completamente vacías
+  dataToProcess = dataToProcess.filter(item => item[nombreKey] || item[cargoKey]);
+
+  if (dataToProcess.length === 0) {
+      throw new Error('El archivo Excel no contiene datos útiles después de la limpieza.');
+  }
+
+  const data = dataToProcess.map(r => ({
+      name: String(r[nombreKey]).toUpperCase(),
+      position: String(r[cargoKey]).toUpperCase()
   }));
 
   // Llamamos a tu función original de generación de PDF
-  await generatePdf(data, logoFile, outputPdf);
+  await generatePdf(data, logoFile, outputPdf, fontChoice); 
   console.log(`PDF generado en: ${outputPdf}`);
 }
 
