@@ -124,7 +124,7 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
                 let logoActualHeight = 0; // Inicializamos a 0. Solo se asigna si el logo carga con éxito.
                 try {
                     const img = doc.openImage(logoPath);
-                    const fixedHeight = 50; // ALTURA FIJA: 50 puntos
+                    const fixedHeight = 60; // ALTURA FIJA: 50 puntos
                     const ih = fixedHeight; 
                     const iw = img.width / img.height * ih; // Calcular ancho dinámico
                     
