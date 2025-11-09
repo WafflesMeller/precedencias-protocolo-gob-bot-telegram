@@ -121,14 +121,13 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
                   .rect(x, y, CARD.width, CARD.height).stroke().restore();
                 
                 // --- Lógica del Logo Centrado ---
-                let logoActualHeight = 0; // Inicializamos a 0
+                let logoActualHeight = 50; // ALTURA FIJA EN PUNTOS
                 try {
                     const img = doc.openImage(logoPath);
-                    const iw = 80; 
-                    logoActualHeight = img.height / img.width * iw;
-                    const logoX = x + (CARD.width - iw) / 2;
+                    const ih = logoActualHeight; // Usamos la altura fija
+                    const iw = img.width / img.height * ih; // Calcular ancho dinámico
                     // Posicionamiento Y: 10 puntos desde el borde superior de la tarjeta (y)
-                    doc.image(logoPath, logoX, y + 10, { width: iw });
+                    doc.image(logoPath, logoX, y + 10, { width: iw, height: ih });
                 } catch (e) {
                     console.error("Error al cargar logo:", e.message);
                 }
