@@ -1,4 +1,4 @@
-// generador.js (Final: 10 tarjetas, Logo centrado [Altura Fija 50pt], Borde Negro, Ajuste a 4 líneas)
+// generador.js (Final: 10 tarjetas, Logo centrado [Altura Fija 60pt], Borde Negro, Ajuste a 4 líneas, Detección de Encabezado)
 
 const fs = require('fs');
 const path = require('path');
@@ -17,7 +17,8 @@ const CARD = {
 
 // Esta es la función "envoltura" que el bot llamará
 async function generatePdfFromFiles(inputFile, logoFile, outputPdf, fontChoice = 'Arial') {
-    // --- Leer el archivo Excel ---
+    
+    // --- 1. Leer el archivo Excel y la hoja ---
     const workbook = xlsx.readFile(inputFile);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     
@@ -25,75 +26,66 @@ async function generatePdfFromFiles(inputFile, logoFile, outputPdf, fontChoice =
         throw new Error('La hoja de cálculo está vacía o no existe.');
     }
 
-    // Leer Excel y parsear, asumiendo inicialmente que tiene encabezados (comportamiento actual)
-    let rowsWithHeaders = xlsx.utils.sheet_to_json(sheet, { defval: '' });
+    // --- 2. DETECCIÓN INTELIGENTE DE ENCABEZADOS ---
+    // Leemos la hoja completa usando números (header: 1) para obtener todas las filas como arrays.
+    const rawData = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-    if (!rowsWithHeaders.length) {
-        throw new Error('El archivo Excel está vacío o no contiene datos válidos.');
+    if (rawData.length === 0 || rawData[0].length < 2) {
+        throw new Error('El archivo Excel no tiene datos o columnas suficientes (se necesitan al menos 2).');
     }
 
-    let dataToProcess = [];
-    let nombreKey, cargoKey;
-
-    // 1. INTENTO DE DETECCIÓN CON ENCABEZADOS (Lógica original)
-    const headers = Object.keys(rowsWithHeaders[0]);
-    nombreKey = headers.find(h => /nombre/i.test(h));
-    cargoKey = headers.find(h => /cargo/i.test(h));
-
-    // Si se encuentran las claves por nombre o se asume un orden (al menos 2 columnas)
-    if (nombreKey && cargoKey) {
-        dataToProcess = rowsWithHeaders;
-    } else if (headers.length >= 2) {
-        // Si no encontramos 'nombre'/'cargo', asumimos que las primeras dos columnas son
-        // Nombre y Cargo respectivamente, usando sus nombres de encabezado.
-        [nombreKey, cargoKey] = headers;
-        dataToProcess = rowsWithHeaders;
+    const firstRow = rawData[0];
+    let dataRows = rawData; // Por defecto, usamos todas las filas como datos.
+    
+    // Convertimos las dos primeras celdas de la primera fila a minúsculas para la detección.
+    // Usamos || '' para manejar celdas nulas de forma segura.
+    const firstCell = String(firstRow[0] || '').toLowerCase();
+    const secondCell = String(firstRow[1] || '').toLowerCase();
+    
+    // Buscamos si la primera fila contiene 'nombre' Y 'cargo' en las dos primeras celdas
+    if (firstCell.includes('nombre') && secondCell.includes('cargo')) {
+        // Si encontramos encabezados, saltamos la primera fila de datos.
+        dataRows = rawData.slice(1);
+        // console.log("Encabezados detectados: Saltando la primera fila.");
     } else {
-        // 2. ESCENARIO SIN ENCABEZADOS
-        // Leemos la hoja completa, asumiendo que la fila 1 (índice 0) son datos.
-        const rawData = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-
-        if (rawData.length === 0 || rawData[0].length < 2) {
-            throw new Error('El archivo Excel no tiene datos o columnas suficientes (se necesitan al menos 2).');
-        }
-
-        // Mapeamos los datos, asumiendo Columna A (índice 0) es Nombre y Columna B (índice 1) es Cargo
-        dataToProcess = rawData.map(row => ({
-            name: row[0],
-            position: row[1] || ''
-        }));
-
-        // Definimos las claves para el siguiente paso
-        nombreKey = 'name';
-        cargoKey = 'position';
+        // console.log("No se detectaron encabezados: Usando la primera fila como dato.");
     }
 
-    // 3. Normalizar datos
-    // Filtramos filas que pueden haber quedado completamente vacías
-    dataToProcess = dataToProcess.filter(item => item[nombreKey] || item[cargoKey]);
+    if (dataRows.length === 0) {
+        throw new Error('El archivo Excel no contiene datos útiles después de la detección/limpieza.');
+    }
 
-    if (dataToProcess.length === 0) {
+    // --- 3. Normalizar y Mapear Datos ---
+    
+    const data = dataRows
+        // Mapeamos los datos, asumiendo Columna A (índice 0) es Nombre y Columna B (índice 1) es Cargo
+        .map(row => ({
+            // Aseguramos que solo usamos los valores de las dos primeras columnas
+            name: String(row[0] || '').toUpperCase(),
+            position: String(row[1] || '').toUpperCase()
+        }))
+        // Filtramos filas que pueden haber quedado vacías
+        .filter(item => item.name || item.position);
+
+    if (data.length === 0) {
         throw new Error('El archivo Excel no contiene datos útiles después de la limpieza.');
     }
 
-    const data = dataToProcess.map(r => ({
-        name: String(r[nombreKey]).toUpperCase(),
-        position: String(r[cargoKey]).toUpperCase()
-    }));
-
-    // Llamamos a tu función original de generación de PDF
+    // --- 4. Generar PDF ---
+    // fontChoice se mantiene para una futura implementación
     await generatePdf(data, logoFile, outputPdf, fontChoice); 
     console.log(`PDF generado en: ${outputPdf}`);
 }
 
 /**
  * generatePdf: Contiene toda la lógica de maquetación y dibujo.
+ * Mantiene la altura fija de 60pt y la maquetación de 10 tarjetas.
  */
 function generatePdf(data, logoFile, outputPdf, fontChoice) {
     return new Promise((resolve, reject) => {
         const doc = new PDFDocument({ size: 'LETTER', margin: CARD.margin });
         
-        // Registrar Arial (Se ignora fontChoice, se usa Arial por defecto)
+        // Registrar Arial (Se usa Arial por defecto)
         doc.registerFont('Arial', path.join(__dirname, 'Arial.ttf'));
         doc.registerFont('Arial-Bold', path.join(__dirname, 'Arial-Bold.ttf'));
 
@@ -120,11 +112,11 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
                 doc.save().lineWidth(1).strokeColor('#000000') 
                   .rect(x, y, CARD.width, CARD.height).stroke().restore();
                 
-                // --- Lógica del Logo Centrado (Altura Fija) ---
+                // --- Lógica del Logo Centrado (Altura Fija 60pt) ---
                 let logoActualHeight = 0; // Inicializamos a 0. Solo se asigna si el logo carga con éxito.
                 try {
                     const img = doc.openImage(logoPath);
-                    const fixedHeight = 60; // ALTURA FIJA: 50 puntos
+                    const fixedHeight = 60; // ALTURA FIJA: 60 puntos
                     const ih = fixedHeight; 
                     const iw = img.width / img.height * ih; // Calcular ancho dinámico
                     
@@ -177,7 +169,8 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
                 const th = nh + spacing + ph; // Altura total del bloque de texto
                 
                 // Altura que ocupa el logo + márgenes (10 sup, 10 inf)
-                const logoH = logoActualHeight > 0 ? (10 + logoActualHeight + 0) : 0; 
+                // Usamos 10pt de margen superior y 10pt de separación al texto
+                const logoH = logoActualHeight > 0 ? (10 + logoActualHeight + 10) : 0; 
                 
                 // Espacio restante para el texto
                 const remainingH = CARD.height - logoH;
