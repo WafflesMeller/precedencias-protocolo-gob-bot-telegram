@@ -11,7 +11,7 @@ const CARD = {
     // Altura ajustada para 10 tarjetas por página (5 filas)
     height: 140, 
     gapX: 20,
-    gapY: 10,
+    gapY: 15,
     margin: 15
 };
 
@@ -117,7 +117,7 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
                 const y = CARD.margin + r * (CARD.height + CARD.gapY);
                 
                 // tarjeta (Borde Negro, Grosor 2)
-                doc.save().lineWidth(2).strokeColor('#000000') 
+                doc.save().lineWidth(1).strokeColor('#000000') 
                   .rect(x, y, CARD.width, CARD.height).stroke().restore();
                 
                 // --- Lógica del Logo Centrado ---
