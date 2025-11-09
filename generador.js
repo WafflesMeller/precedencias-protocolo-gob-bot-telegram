@@ -8,9 +8,9 @@ const PDFDocument = require('pdfkit');
 // Parámetros de diseño de la tarjeta
 const CARD = {
   width: 280,
-  height: 95,
+  height: 140,
   gapX: 20,
-  gapY: 55,
+  gapY: 8,
   margin: 15
 };
 
