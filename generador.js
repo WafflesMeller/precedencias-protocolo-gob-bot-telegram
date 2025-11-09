@@ -10,7 +10,7 @@ const CARD = {
   width: 280,
   height: 95,
   gapX: 20,
-  gapY: 15,
+  gapY: 45,
   margin: 15
 };
 
