@@ -118,9 +118,10 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
         doc.save().lineWidth(2).strokeColor('#0737AA')
           .rect(x, y, CARD.width, CARD.height).stroke().restore();
         // logo centrado vertical
+      let logoActualHeight = 0; // Inicializamos a 0
         try {
           const img = doc.openImage(logoPath);
-          const iw = 60, ih = img.height / img.width * iw;
+          const iw = 60; logoActualHeight = img.height / img.width * iw;
           const logoX = x + (CARD.width - iw) / 2;
           doc.image(logoPath, logoX, y + 10, { width: iw });
         } catch (e) {
@@ -152,7 +153,7 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
         // Altura total del bloque de texto
           const th = nh + spacing + ph; 
           // Altura utilizada por el logo (margen superior 10 + altura del logo + separación inferior 10)
-          const logoH = 10 + ih + 10;
+          const logoH = logoActualHeight > 0 ? (10 + logoActualHeight + 10) : 0;
           // Altura restante para el texto: Altura de la tarjeta - Altura del logo
           const remainingH = CARD.height - logoH;
 
