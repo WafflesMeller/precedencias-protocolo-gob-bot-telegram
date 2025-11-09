@@ -1,4 +1,4 @@
-// generador.js (Versión: 10 tarjetas, Logo centrado, Borde Negro, Ajuste a 4 líneas)
+// generador.js (Final: 10 tarjetas, Logo centrado [Altura Fija 50pt], Borde Negro, Ajuste a 4 líneas)
 
 const fs = require('fs');
 const path = require('path');
@@ -15,7 +15,7 @@ const CARD = {
     margin: 15
 };
 
-// Esta es la nueva función "envoltura" que el bot llamará
+// Esta es la función "envoltura" que el bot llamará
 async function generatePdfFromFiles(inputFile, logoFile, outputPdf, fontChoice = 'Arial') {
     // --- Leer el archivo Excel ---
     const workbook = xlsx.readFile(inputFile);
@@ -93,7 +93,7 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
     return new Promise((resolve, reject) => {
         const doc = new PDFDocument({ size: 'LETTER', margin: CARD.margin });
         
-        // Registrar Arial (Se ignora fontChoice por ahora, se usa Arial por defecto)
+        // Registrar Arial (Se ignora fontChoice, se usa Arial por defecto)
         doc.registerFont('Arial', path.join(__dirname, 'Arial.ttf'));
         doc.registerFont('Arial-Bold', path.join(__dirname, 'Arial-Bold.ttf'));
 
@@ -116,20 +116,28 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
                 const x = CARD.margin + c * (CARD.width + CARD.gapX);
                 const y = CARD.margin + r * (CARD.height + CARD.gapY);
                 
-                // tarjeta (Borde Negro, Grosor 2)
+                // tarjeta (Borde Negro, Grosor 1)
                 doc.save().lineWidth(1).strokeColor('#000000') 
                   .rect(x, y, CARD.width, CARD.height).stroke().restore();
                 
-                // --- Lógica del Logo Centrado ---
-                let logoActualHeight = 50; // ALTURA FIJA EN PUNTOS
+                // --- Lógica del Logo Centrado (Altura Fija) ---
+                let logoActualHeight = 0; // Inicializamos a 0. Solo se asigna si el logo carga con éxito.
                 try {
                     const img = doc.openImage(logoPath);
-                    const ih = logoActualHeight; // Usamos la altura fija
+                    const fixedHeight = 50; // ALTURA FIJA: 50 puntos
+                    const ih = fixedHeight; 
                     const iw = img.width / img.height * ih; // Calcular ancho dinámico
+                    
+                    const logoX = x + (CARD.width - iw) / 2;
                     // Posicionamiento Y: 10 puntos desde el borde superior de la tarjeta (y)
                     doc.image(logoPath, logoX, y + 10, { width: iw, height: ih });
+                    
+                    // Asignamos el valor fijo SOLO si la imagen se dibujó con éxito
+                    logoActualHeight = fixedHeight; 
+
                 } catch (e) {
                     console.error("Error al cargar logo:", e.message);
+                    // Si falla, logoActualHeight se queda en 0.
                 }
 
                 // --- Definición del Área de Texto ---
@@ -169,7 +177,7 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
                 const th = nh + spacing + ph; // Altura total del bloque de texto
                 
                 // Altura que ocupa el logo + márgenes (10 sup, 10 inf)
-                const logoH = logoActualHeight > 0 ? (10 + logoActualHeight + 0) : 0; 
+                const logoH = logoActualHeight > 0 ? (10 + logoActualHeight + 10) : 0; 
                 
                 // Espacio restante para el texto
                 const remainingH = CARD.height - logoH;
