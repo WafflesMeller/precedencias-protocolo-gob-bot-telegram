@@ -10,7 +10,7 @@ const CARD = {
   width: 280,
   height: 140,
   gapX: 20,
-  gapY: 8,
+  gapY: 10,
   margin: 15
 };
 
@@ -120,14 +120,16 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
         // logo centrado vertical
         try {
           const img = doc.openImage(logoPath);
-          const iw = 80, ih = img.height / img.width * iw;
-          doc.image(logoPath, x + 8, y + (CARD.height - ih) / 2, { width: iw });
+          const iw = 60, ih = img.height / img.width * iw;
+          const logoX = x + (CARD.width - iw) / 2;
+          doc.image(logoPath, logoX, y + 10, { width: iw });
         } catch (e) {
           console.error("Error al cargar logo:", e.message);
         }
         // área texto
-        const padL = 10, padR = 10, spacing = 4;
-        const tx = x + 8 + 80 + padL, tw = CARD.width - (80 + 8 + padL + padR);
+        const padX = 15, spacing = 4; // Un margen horizontal de 15 a cada lado
+        const tx = x + padX; // Posición X del texto (desde el margen de la tarjeta)
+        const tw = CARD.width - (2 * padX); // Ancho del texto
         // nombre ajustable
         let ns = 14, nh;
         for (let sz = 14; sz >= 6; sz--) {
@@ -146,12 +148,21 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
         }
         doc.font('Arial').fontSize(ps);
         ph = doc.heightOfString(item.position, { width: tw, align: 'center' });
-        // centrar vertical texto
-        const th = nh + spacing + ph, ty = y + (CARD.height - th) / 2;
-        doc.font('Arial-Bold').fontSize(ns)
-          .text(item.name, tx, ty, { width: tw, align: 'center' });
-        doc.font('Arial').fontSize(ps)
-          .text(item.position, tx, ty + nh + spacing, { width: tw, align: 'center' });
+        // Centrar texto
+        // Altura total del bloque de texto
+          const th = nh + spacing + ph; 
+          // Altura utilizada por el logo (margen superior 10 + altura del logo + separación inferior 10)
+          const logoH = 10 + ih + 10;
+          // Altura restante para el texto: Altura de la tarjeta - Altura del logo
+          const remainingH = CARD.height - logoH;
+
+          // Calcular el Y central: Posición Y de la tarjeta + Altura del logo + (Espacio restante - Altura del texto) / 2
+          const ty = y + logoH + (remainingH - th) / 2; 
+
+          doc.font('Arial-Bold').fontSize(ns)
+              .text(item.name, tx, ty, { width: tw, align: 'center' });
+          doc.font('Arial').fontSize(ps)
+              .text(item.position, tx, ty + nh + spacing, { width: tw, align: 'center' });
       });
       // líneas de recorte
       doc.save().lineWidth(0.5).strokeColor('#999').dash(5, { space: 5 });
