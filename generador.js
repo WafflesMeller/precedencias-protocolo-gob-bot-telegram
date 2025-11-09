@@ -10,7 +10,7 @@ const CARD = {
   width: 280,
   height: 140,
   gapX: 20,
-  gapY: 10,
+  gapY: 15,
   margin: 15
 };
 
@@ -115,7 +115,7 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
         const x = CARD.margin + c * (CARD.width + CARD.gapX);
         const y = CARD.margin + r * (CARD.height + CARD.gapY);
         // tarjeta
-        doc.save().lineWidth(2).strokeColor('#0737AA')
+        doc.save().lineWidth(1).strokeColor('#black')
           .rect(x, y, CARD.width, CARD.height).stroke().restore();
         // logo centrado vertical
       let logoActualHeight = 0; // Inicializamos a 0
@@ -141,8 +141,8 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
         doc.font('Arial-Bold').fontSize(ns);
         nh = doc.heightOfString(item.name, { width: tw, align: 'center' });
         // cargo ajustable
-        let ps = 10, ph;
-        for (let sz = 10; sz >= 6; sz--) {
+        let ps = 11, ph;
+        for (let sz = 11; sz >= 6; sz--) {
           doc.font('Arial').fontSize(sz);
           ph = doc.heightOfString(item.position, { width: tw, align: 'center' });
           if (ph <= sz * 1.2 * 2) { ps = sz; break; }
@@ -153,7 +153,7 @@ function generatePdf(data, logoFile, outputPdf, fontChoice) {
         // Altura total del bloque de texto
           const th = nh + spacing + ph; 
           // Altura utilizada por el logo (margen superior 10 + altura del logo + separación inferior 10)
-          const logoH = logoActualHeight > 0 ? (10 + logoActualHeight + 10) : 0;
+          const logoH = logoActualHeight > 0 ? (10 + logoActualHeight + 2) : 0;
           // Altura restante para el texto: Altura de la tarjeta - Altura del logo
           const remainingH = CARD.height - logoH;
 
