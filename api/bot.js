@@ -1,260 +1,343 @@
-// api/bot.js (¡Versión 4, con nombres de archivo dinámicos!)
+/*
+ * api/bot.js (Versión 5: Mejoras de UX y Comentarios)
+ *
+ * Este archivo es el "cerebro" serverless de tu bot de Telegram.
+ * Se despliega en Vercel y maneja toda la lógica de la conversación.
+ */
 
-const { Telegraf, Markup } = require("telegraf");
-const fs = require("fs");
-const path = require("path");
-const https = require("https");
-const { generatePdfFromFiles } = require("../generador.js");
+// --- 1. Importaciones de Módulos ---
 
-const TEMP_DIR = "/tmp";
+// Telegraf es el framework principal del bot.
+// Markup se usa para crear los botones inline.
+const { Telegraf, Markup } = require('telegraf');
+
+// Módulos nativos de Node.js para manejar archivos y URLs
+const fs = require('fs');
+const path = require('path');
+const https = require('https'); // Necesario para descargar archivos desde Telegram
+
+// ¡Importamos TU lógica de generación de PDF desde generador.js!
+const { generatePdfFromFiles } = require('../generador.js');
+
+// --- 2. Constantes y Configuración ---
+
+// Vercel solo nos deja escribir archivos en el directorio /tmp
+const TEMP_DIR = '/tmp';
+
+// Leemos el Token secreto desde las Variables de Entorno de Vercel
+// ¡Nunca escribas el token directamente en el código!
 const TOKEN = process.env.TELEGRAM_TOKEN;
+
+// Creamos la instancia del bot
 const bot = new Telegraf(TOKEN);
 
+// Este objeto 'userState' es nuestra "mini base de datos".
+// Guarda en qué paso de la conversación está cada usuario.
+// Ej: userState[chatId] = { step: 'awaiting_excel', excel_file_id: '...' }
 const userState = {};
 
-// ----------------------------------------------------------------------
-// NUEVA FUNCIÓN: Para obtener la fecha y hora local de Venezuela
-// ----------------------------------------------------------------------
+// --- 3. Funciones de Ayuda (Helpers) ---
+
+/**
+ * Genera una cadena de texto con la fecha y hora actual en Venezuela (UTC-4).
+ * @returns {string} Ej: "2025-11-08_20-15-10"
+ */
 function getLocalTimestamp() {
   const now = new Date();
-
-  // Opciones para la zona horaria de Venezuela (UTC-4)
+  
+  // Opciones para formatear en la zona horaria de Venezuela
   const options = {
-    timeZone: "America/Caracas",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false // Formato de 24 horas
   };
 
-  // 'sv-SE' da el formato YYYY-MM-DD HH:mm:ss
-  const dateTimeString = now.toLocaleString("sv-SE", options);
-
-  // Reemplazamos para que sea seguro en un nombre de archivo
-  // "2025-11-08 19:49:18" -> "2025-11-08_19-49-18"
-  return dateTimeString.replace(" ", "_").replace(/:/g, "-");
+  // 'sv-SE' (Sueco) nos da el formato YYYY-MM-DD HH:mm:ss, que es fácil de manipular
+  const dateTimeString = now.toLocaleString('sv-SE', options);
+  
+  // Reemplazamos los caracteres no seguros para nombres de archivo
+  // "2025-11-08 20:15:10" -> "2025-11-08_20-15-10"
+  return dateTimeString
+    .replace(' ', '_')  // Reemplaza espacio por guion bajo
+    .replace(/:/g, '-'); // Reemplaza todos los : por guiones
 }
 
-// 1. Comando /start (sin cambios)
+/**
+ * Descarga un archivo desde una URL de Telegram a un destino local.
+ * @param {string} url - La URL de descarga (ej: link.href)
+ * @param {string} dest - El path de destino (ej: /tmp/archivo.xlsx)
+ */
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    
+    https.get(url, (response) => {
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close(resolve);
+      });
+    }).on('error', (err) => {
+      // Si hay error, borra el archivo incompleto
+      fs.unlink(dest, () => reject(err));
+    });
+  });
+}
+
+// --- 4. Lógica del Bot (Manejadores) ---
+
+/**
+ * 4.1. Comando /start
+ * Se activa cuando el usuario inicia la conversación.
+ */
 bot.start((ctx) => {
   const chatId = ctx.chat.id;
-  userState[chatId] = { step: "awaiting_excel" };
+  // (Re)iniciamos el estado del usuario
+  userState[chatId] = { step: 'awaiting_excel' };
+  
   ctx.reply(
-    "¡Hola! Por favor, envíame el archivo Excel (.xlsx o .xls) con los nombres y cargos."
+    '¡Bienvenido! 👋 Soy tu asistente para generar Precedencias.\n\n' +
+    'Para comenzar, por favor envíame el archivo Excel (.xlsx o .xls) con los nombres y cargos.'
   );
 });
 
-// 2. Manejador de Archivos (Documentos)
-bot.on("document", async (ctx) => {
+/**
+ * 4.2. Manejador de Documentos
+ * Se activa cuando el usuario envía CUALQUIER archivo (documento).
+ * Aquí manejamos el Excel y el Logo personalizado.
+ */
+bot.on('document', async (ctx) => {
   const chatId = ctx.chat.id;
   const doc = ctx.message.document;
 
+  // Si el usuario no está en nuestra "base de datos", lo iniciamos
   if (!userState[chatId]) {
-    userState[chatId] = { step: "awaiting_excel" };
+    userState[chatId] = { step: 'awaiting_excel' };
   }
   const currentState = userState[chatId];
 
   try {
-    // ---- PASO 1: Esperando el EXCEL ----
-    if (currentState.step === "awaiting_excel") {
-      if (doc.file_name.endsWith(".xlsx") || doc.file_name.endsWith(".xls")) {
+    // --- Lógica para el PASO 1: Esperando el EXCEL ---
+    if (currentState.step === 'awaiting_excel') {
+      // Verificamos la extensión del archivo
+      if (doc.file_name.endsWith('.xlsx') || doc.file_name.endsWith('.xls')) {
+        
+        // ¡Es un Excel! Guardamos su file_id
         currentState.excel_file_id = doc.file_id;
-        currentState.step = "awaiting_logo_choice";
+        // Avanzamos al siguiente paso
+        currentState.step = 'awaiting_logo_choice';
 
-        await ctx.reply(
-          "¡Excel recibido! 👍 Ahora, ¿qué logo quieres usar?",
+        // Respondemos con los botones inline
+        await ctx.reply('¡Excelente! Archivo Excel recibido. 👍\n\nAhora, ¿qué logo quieres usar para tu PDF?',
           Markup.inlineKeyboard([
-            Markup.button.callback("Logo Gobernación", "logo_gob"),
-            Markup.button.callback("Escudo Edo La Guaira", "logo_escudo_edo"),
-            Markup.button.callback("Subir mi logo", "logo_upload"),
+            // Cada botón en su propio array [ ] crea una nueva fila (apilados)
+            [ Markup.button.callback('Logo Gobernación', 'logo_gob') ],
+            [ Markup.button.callback('Escudo Edo La Guaira', 'logo_escudo_edo') ],
+            [ Markup.button.callback('Subir otro logo', 'logo_upload') ]
           ])
         );
+
       } else {
-        await ctx.reply(
-          "Eso no parece un archivo Excel. Por favor, envía un .xlsx o .xls. Si te trabaste, escribe /start"
-        );
+        // El archivo no es un Excel
+        await ctx.reply('Ups, ese archivo no parece ser un Excel. 😅\nPor favor, envíame un archivo `.xlsx` o `.xls`. Si te trabaste, escribe /start');
       }
-      return;
+      return; // Salimos y esperamos la siguiente acción del usuario
     }
 
-    // ---- PASO 3: Esperando el LOGO SUBIDO ----
-    if (currentState.step === "awaiting_logo_upload") {
-      if (
-        doc.file_name.endsWith(".png") ||
-        doc.file_name.endsWith(".jpg") ||
-        doc.file_name.endsWith(".jpeg")
-      ) {
-        await ctx.reply("¡Logo personalizado recibido! 🤩 Generando tu PDF...");
+    // --- Lógica para el PASO 3: Esperando el LOGO SUBIDO ---
+    // (El usuario llega aquí solo si en el Paso 2 presionó "Subir otro logo")
+    if (currentState.step === 'awaiting_logo_upload') {
+      // Verificamos que sea una imagen
+      if (doc.file_name.endsWith('.png') || doc.file_name.endsWith('.jpg') || doc.file_name.endsWith('.jpeg')) {
+        
+        await ctx.reply('¡Logo personalizado recibido! 🖼️ Generando tu PDF... Esto puede tardar unos segundos.');
 
-        // CAMBIO: Generamos el nombre de archivo dinámico
-        const timestamp = getLocalTimestamp(); // Ej: "2025-11-08_19-49-18"
+        // 1. Generar nombre de archivo único
+        const timestamp = getLocalTimestamp(); // Ej: "2025-11-08_20-15-10"
         const finalFilename = `precedencias ${timestamp}.pdf`;
 
-        const excelLink = await ctx.telegram.getFileLink(
-          currentState.excel_file_id
-        );
-        const logoLink = await ctx.telegram.getFileLink(doc.file_id);
+        // 2. Obtener URLs de descarga de Telegram
+        const excelLink = await ctx.telegram.getFileLink(currentState.excel_file_id);
+        const logoLink = await ctx.telegram.getFileLink(doc.file_id); // El logo que se acaba de subir
 
+        // 3. Definir paths temporales en Vercel
         const excelPath = path.join(TEMP_DIR, `datos_${chatId}.xlsx`);
         const logoPath = path.join(TEMP_DIR, `logo_${chatId}.png`);
-        // El outputPath es temporal, así que puede ser simple
-        const outputPath = path.join(TEMP_DIR, `precedencias_${chatId}.pdf`);
+        const outputPath = path.join(TEMP_DIR, `temp_pdf_${chatId}.pdf`); // Path temporal de salida
 
+        // 4. Descargar ambos archivos
         await downloadFile(excelLink.href, excelPath);
         await downloadFile(logoLink.href, logoPath);
 
+        // 5. ¡Llamar a tu lógica!
         await generatePdfFromFiles(excelPath, logoPath, outputPath);
 
-        // CAMBIO: Usamos el 'finalFilename' que creamos
+        // 6. Enviar el PDF de vuelta
         await ctx.replyWithDocument({
           source: outputPath,
-          filename: finalFilename,
+          filename: finalFilename // Usamos el nombre bonito
         });
 
+        // 7. Limpiar archivos temporales
         fs.unlinkSync(excelPath);
         fs.unlinkSync(logoPath);
         fs.unlinkSync(outputPath);
-        delete userState[chatId];
+        delete userState[chatId]; // Limpiar estado del usuario
+
       } else {
-        await ctx.reply(
-          "Eso no parece un logo. Por favor, envía un archivo .png o .jpg."
-        );
+        await ctx.reply('Eso no parece un logo. Por favor, envía un archivo `.png` o `.jpg`.');
       }
     }
+
   } catch (error) {
-    console.error("Error procesando archivo:", error.message);
-    await ctx.reply(
-      "Hubo un error procesando tu solicitud. Por favor, intenta de nuevo con /start"
-    );
-    delete userState[chatId];
+    console.error('Error procesando archivo:', error.message);
+    await ctx.reply('¡Oh no! 😫 Hubo un error procesando tu solicitud. Por favor, intenta de nuevo con /start');
+    delete userState[chatId]; // Limpiar estado en error
   }
 });
 
-// 3. Manejador de Clics en Botones (Callback Query)
-bot.on("callback_query", async (ctx) => {
+/**
+ * 4.3. Manejador de Clics en Botones (Callback Query)
+ * Se activa cuando el usuario presiona uno de los botones inline.
+ */
+bot.on('callback_query', async (ctx) => {
   const chatId = ctx.chat.id;
-  const choice = ctx.callbackQuery.data;
-
+  // 'choice' será 'logo_gob', 'logo_escudo_edo', o 'logo_upload'
+  const choice = ctx.callbackQuery.data; 
+  
+  // Responde al clic inmediatamente para que el botón deje de "cargar"
   await ctx.answerCbQuery();
 
-  if (!userState[chatId] || userState[chatId].step !== "awaiting_logo_choice") {
-    await ctx.reply("Error de estado. Por favor, empieza de nuevo con /start");
+  // Verificación de seguridad: ¿Está el usuario en el paso correcto?
+  if (!userState[chatId] || userState[chatId].step !== 'awaiting_logo_choice') {
+    await ctx.reply('Parece que hubo un error de estado. Por favor, empieza de nuevo con /start');
     return;
   }
 
   const currentState = userState[chatId];
 
   try {
-    if (choice === "logo_upload") {
-      currentState.step = "awaiting_logo_upload";
+    // --- Opción 3: El usuario quiere SUBIR su logo ---
+    if (choice === 'logo_upload') {
+      // Cambiamos el estado para que el manejador de 'document' sepa qué hacer
+      currentState.step = 'awaiting_logo_upload';
+      // Editamos el mensaje original (quitando los botones)
       await ctx.editMessageText(
-        "OK. Por favor, sube tu archivo de logo personalizado (.png o .jpg)."
+        '¡Entendido! Sube tu logo personalizado. 🖼️\n\n' +
+        'Recuerda enviarlo como <b>Archivo</b> (no como foto) para la mejor calidad.',
+        { parse_mode: 'HTML' } // Usamos HTML para la negrita
       );
+    
     } else {
-      let logoName = "";
-      let friendlyName = "";
+      // --- Opción 1 o 2: El usuario eligió un LOGO PRECARGADO ---
+      let logoName = '';      // El nombre del archivo (ej: logo-gob.png)
+      let friendlyName = '';  // El nombre para el mensaje (ej: Logo Gobernación)
 
-      if (choice === "logo_gob") {
-        logoName = "logo-gob.png";
-        friendlyName = "Logo Gobernación";
-      } else if (choice === "logo_escudo_edo") {
-        logoName = "logo-escudo-edo.png";
-        friendlyName = "Escudo Edo La Guaira";
+      if (choice === 'logo_gob') {
+        logoName = 'logo-gob.png';
+        friendlyName = 'Logo Gobernación';
+      } else if (choice === 'logo_escudo_edo') {
+        logoName = 'logo-escudo-edo.png';
+        friendlyName = 'Escudo Edo La Guaira';
       }
-
-      // Esta es la nueva línea con negrita:
+      
+      // Editamos el mensaje, quitando botones y AÑADIENDO NEGrita
       await ctx.editMessageText(
-        `¡Entendido! 🤩 Generando tu PDF con el logo <b>${friendlyName}</b>...`,
-        {
-          parse_mode: "HTML",
-        }
+        `¡Perfecto! 🤩 Generando tu PDF con el logo "<b>${friendlyName}</b>"...`,
+        { parse_mode: 'HTML' } // ¡Aquí usamos HTML para la negrita!
       );
 
-      const logoPath = path.join(__dirname, "..", "logos", logoName);
-
-      // CAMBIO: Generamos el nombre de archivo dinámico
-      const timestamp = getLocalTimestamp(); // Ej: "2025-11-08_19-49-18"
+      // 1. Construir el path al logo precargado
+      // __dirname es el directorio actual (ej: /var/task/api)
+      // '..' sube un nivel (ej: /var/task)
+      // 'logos' entra a tu carpeta de logos
+      const logoPath = path.join(__dirname, '..', 'logos', logoName);
+      
+      // 2. Generar nombre de archivo
+      const timestamp = getLocalTimestamp();
       const finalFilename = `precedencias ${timestamp}.pdf`;
-
-      const excelLink = await ctx.telegram.getFileLink(
-        currentState.excel_file_id
-      );
+      
+      // 3. Obtener URL y definir paths temporales
+      const excelLink = await ctx.telegram.getFileLink(currentState.excel_file_id);
       const excelPath = path.join(TEMP_DIR, `datos_${chatId}.xlsx`);
-      // El outputPath es temporal
-      const outputPath = path.join(TEMP_DIR, `precedencias_${chatId}.pdf`);
+      const outputPath = path.join(TEMP_DIR, `temp_pdf_${chatId}.pdf`);
 
+      // 4. Descargar SOLO el Excel
       await downloadFile(excelLink.href, excelPath);
 
+      // 5. ¡Llamar a tu lógica! (Usando el logo local)
       await generatePdfFromFiles(excelPath, logoPath, outputPath);
 
-      // CAMBIO: Usamos el 'finalFilename' que creamos
+      // 6. Enviar el PDF
       await ctx.replyWithDocument({
         source: outputPath,
-        filename: finalFilename,
+        filename: finalFilename
       });
 
+      // 7. Limpiar
       fs.unlinkSync(excelPath);
-      fs.unlinkSync(outputPath);
-      delete userState[chatId];
+      fs.unlinkSync(outputPath); // Solo borramos los archivos de /tmp
+      delete userState[chatId]; // Limpiar estado
     }
+
   } catch (error) {
-    console.error("Error en callback:", error.message);
-    await ctx.reply("Hubo un error. Por favor, intenta de nuevo con /start");
+    console.error('Error en callback:', error.message);
+    await ctx.reply('¡Oh no! 😫 Hubo un error con tu selección. Por favor, intenta de nuevo con /start');
     delete userState[chatId];
   }
 });
 
-// 4. Manejador para fotos (sin cambios)
-bot.on("photo", (ctx) => {
+/**
+ * 4.4. Manejador de Fotos
+ * Se activa si el usuario envía una FOTO (en lugar de un Archivo/Documento).
+ * Lo usamos para guiarlo a que lo haga de la forma correcta.
+ */
+bot.on('photo', async (ctx) => {
   const chatId = ctx.chat.id;
-  if (
-    userState[chatId] &&
-    (userState[chatId].step === "awaiting_logo_choice" ||
-      userState[chatId].step === "awaiting_logo_upload")
-  ) {
-    ctx.reply(
-      "Casi... Por favor, envía el logo como **Archivo** (no como foto) para mantener la calidad."
+  // Verificamos si estaba en un paso donde esperamos un logo
+  if (userState[chatId] && (userState[chatId].step === 'awaiting_logo_choice' || userState[chatId].step === 'awaiting_logo_upload')) {
+    await ctx.reply(
+      '¡Casi! 📸 Veo que enviaste una foto.\n\n' +
+      'Para asegurar la máxima calidad en el PDF, por favor envíalo como <b>Archivo</b> (usando el 📎).',
+      { parse_mode: 'HTML' }
     );
   } else {
-    ctx.reply("No entendí eso. Escribe /start para comenzar.");
+    // Si no, es un mensaje genérico
+    await ctx.reply('Mmm, no entendí eso. 😅 Si quieres crear un PDF, por favor escribe /start para comenzar el proceso.');
   }
 });
 
-// 5. Manejador de texto genérico (sin cambios)
-bot.on("message", (ctx) => {
-  if (ctx.message.text && ctx.message.text !== "/start") {
-    ctx.reply(
-      "No entendí eso. Por favor, envía los archivos que te pido. Escribe /start para (re)comenzar."
-    );
+/**
+ * 4.5. Manejador de Texto Genérico
+ * Se activa si el usuario escribe cualquier texto que no sea un comando.
+ */
+bot.on('message', (ctx) => {
+  // Verificamos que sea texto y no un comando que ya manejamos
+  if (ctx.message.text && ctx.message.text !== '/start') {
+    ctx.reply('Mmm, no entendí ese comando. 😅 Si quieres crear un PDF, por favor escribe /start para comenzar el proceso.');
   }
 });
 
-// --- Función de ayuda para descargar archivos (sin cambios) ---
-function downloadFile(url, dest) {
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
-    https
-      .get(url, (response) => {
-        response.pipe(file);
-        file.on("finish", () => {
-          file.close(resolve);
-        });
-      })
-      .on("error", (err) => {
-        fs.unlink(dest, () => reject(err));
-      });
-  });
-}
+// --- 5. El Manejador Principal de Vercel ---
 
-// --- Función serverless (sin cambios) ---
+/**
+ * Esta es la función serverless principal.
+ * Vercel ejecuta esto CADA VEZ que Telegram envía un update (mensaje, clic, etc.).
+ */
 module.exports = async (request, response) => {
   try {
+    // Telegraf procesa el 'body' del request de forma segura
     await bot.handleUpdate(request.body);
   } catch (err) {
-    console.error("Error al manejar el update:", err);
+    console.error('Error al manejar el update de Telegram:', err);
   }
-  response.status(200).send("OK");
+  
+  // ¡CRÍTICO! Siempre respondemos 200 (OK) a Telegram.
+  // Si no, Telegram pensará que el mensaje falló y lo seguirá reintentando,
+  // lo que causaría que el bot responda múltiples veces.
+  response.status(200).send('OK');
 };
