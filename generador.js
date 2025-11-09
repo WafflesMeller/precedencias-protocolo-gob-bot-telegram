@@ -15,7 +15,14 @@ const CARD = {
 };
 
 // Esta es la nueva función "envoltura" que el bot llamará
-async function generatePdfFromFiles(inputFile, logoFile, outputPdf) {
+async function generatePdfFromFiles(inputFile, logoFile, outputPdf, fontChoice = 'Arial') {
+  // --- Leer el archivo Excel ---
+    const workbook = xlsx.readFile(inputFile);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    
+    if (!sheet) {
+        throw new Error('La hoja de cálculo está vacía o no existe.');
+    }
   // Leer Excel y parsear, asumiendo inicialmente que tiene encabezados (comportamiento actual)
   let rowsWithHeaders = xlsx.utils.sheet_to_json(sheet, { defval: '' });
 
@@ -81,7 +88,7 @@ async function generatePdfFromFiles(inputFile, logoFile, outputPdf) {
  * generatePdf: esta es tu lógica original, sin cambios.
  * Genera el PDF con tarjetas y líneas de recorte.
  */
-function generatePdf(data, logoFile, outputPdf) {
+function generatePdf(data, logoFile, outputPdf, fontChoice) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'LETTER', margin: CARD.margin });
     
