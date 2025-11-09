@@ -102,7 +102,7 @@ bot.start((ctx) => {
   userState[chatId] = { step: "awaiting_excel" };
 
   ctx.reply(
-    "¡Bienvenido! huhuiohhuihuhuihiuiuhiu 👋 Soy tu asistente para generar Precedencias.\n\n" +
+    "¡Bienvenido!  👋 Soy tu asistente para generar Precedencias.\n\n" +
       "Para comenzar, por favor envíame el archivo Excel (.xlsx o .xls) con los nombres y cargos."
   );
 });
